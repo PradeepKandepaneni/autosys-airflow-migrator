@@ -59,25 +59,12 @@ def _build_header(plan: DagPlan) -> str:
     lines += ["", "from datadog_callbacks import DEFAULT_ARGS, dag_tags"]
     return "\n".join(lines)
 
-# Airflow footgun: `bash_command` (BashOperator) and `command` (SSHOperator) are
-# templated fields whose template_ext includes ".sh"/".bash". If a rendered command
-# *ends* in one of those extensions, Airflow treats the string as a path to a Jinja
-# template file and tries to load it at parse time -> TemplateNotFound spam in the
-# DagBag. A single trailing space is the documented workaround: it keeps the command
-# a literal string. Commands with trailing args (e.g. "foo.sh --strict") are unaffected.
-_TEMPLATE_EXT = (".sh", ".bash")
-
-
-def _safe_cmd(cmd: str) -> str:
-    return cmd + " " if cmd.rstrip().endswith(_TEMPLATE_EXT) else cmd
-
-
 _OP_RENDER = {
     "BashOperator": lambda k: f'BashOperator(task_id={k["task_id"]!r}, '
-                              f'bash_command={_safe_cmd(k.get("bash_command", "true"))!r}{k["_common"]})',
+                              f'bash_command={k.get("bash_command", "true")!r}{k["_common"]})',
     "SSHOperator": lambda k: f'SSHOperator(task_id={k["task_id"]!r}, '
                              f'ssh_conn_id={k.get("ssh_conn_id", "ssh_default")!r}, '
-                             f'command={_safe_cmd(k.get("command", "true"))!r}{k["_common"]})',
+                             f'command={k.get("command", "true")!r}{k["_common"]})',
     "FileSensor": lambda k: f'FileSensor(task_id={k["task_id"]!r}, '
                             f'filepath={k.get("filepath", "")!r}, '
                             f'poke_interval={k.get("poke_interval", 60)}, mode="reschedule"{k["_common"]})',

@@ -29,11 +29,11 @@ with DAG(
 ) as dag:
     with TaskGroup(group_id='eod_settlement') as eod_settlement:
         eod_wait_feed = FileSensor(task_id='eod_wait_feed', filepath='/data/feeds/positions_$$DATE.csv', poke_interval=60, mode="reschedule")
-        eod_extract = SSHOperator(task_id='eod_extract', ssh_conn_id='ssh_prod-etl-01', command='/opt/batch/extract_positions.sh ')
+        eod_extract = SSHOperator(task_id='eod_extract', ssh_conn_id='ssh_prod-etl-01', command='/opt/batch/extract_positions.sh')
         eod_validate = SSHOperator(task_id='eod_validate', ssh_conn_id='ssh_prod-etl-01', command='/opt/batch/validate.sh --strict', execution_timeout=timedelta(minutes=30))
-        eod_transform = SSHOperator(task_id='eod_transform', ssh_conn_id='ssh_prod-etl-02', command='/opt/batch/transform.sh ')
-        eod_reprice = SSHOperator(task_id='eod_reprice', ssh_conn_id='ssh_prod-etl-02', command='/opt/batch/reprice.sh ')
-        eod_load = BashOperator(task_id='eod_load', bash_command='/opt/batch/load_warehouse.sh ', trigger_rule='all_done')
+        eod_transform = SSHOperator(task_id='eod_transform', ssh_conn_id='ssh_prod-etl-02', command='/opt/batch/transform.sh')
+        eod_reprice = SSHOperator(task_id='eod_reprice', ssh_conn_id='ssh_prod-etl-02', command='/opt/batch/reprice.sh')
+        eod_load = BashOperator(task_id='eod_load', bash_command='/opt/batch/load_warehouse.sh', trigger_rule='all_done')
         eod_recon_alert = BashOperator(task_id='eod_recon_alert', bash_command='/opt/batch/page_oncall.sh --reason recon-fail', trigger_rule='all_failed')
         eod_wait_feed >> eod_extract
         eod_extract >> eod_validate

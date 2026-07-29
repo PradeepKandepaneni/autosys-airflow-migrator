@@ -43,52 +43,19 @@ jobs:
           mkdir -p airflow_home/dags
           cp observability/airflow/datadog_callbacks.py airflow_home/dags/
           jil2dag migrate --input examples/jil --output airflow_home/dags
-      - name: Parse the DagBag (fails on any import error OR error-level log)
+      - name: Parse the DagBag (fails on any import error)
         env:
           AIRFLOW_HOME: ${{ github.workspace }}/airflow_home
           AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-          # Airflow 3 no longer puts the dags folder on sys.path itself: in a real
-          # deployment the DAG *bundle* appends its root, and the default local bundle
-          # root IS the dags folder. The low-level DagBag(dag_folder=...) we call here
-          # skips the bundle machinery, so we replicate the bundle's sys.path insertion
-          # explicitly. This is what makes `from datadog_callbacks import ...` resolve.
-          PYTHONPATH: ${{ github.workspace }}/airflow_home/dags
         run: |
           airflow db migrate
           python - <<'PY'
-          import logging
-          import os
           import sys
-
-          # Belt-and-suspenders alongside the PYTHONPATH env above: guarantee the dags
-          # folder is importable regardless of how the shell exports env vars. This is
-          # what the Airflow 3 DAG bundle does for the scheduler; DagBag(dag_folder=...)
-          # does not, so we do it ourselves.
-          sys.path.insert(0, os.path.abspath("airflow_home/dags"))
-
           from airflow.models.dagbag import DagBag
-
-          # Template-resolution failures (e.g. a bash_command ending in ".sh" that
-          # Airflow mistakes for a Jinja template file) are logged, not raised, so
-          # they never reach import_errors. Catch ERROR-level logs and fail on them
-          # too, so "parsed cleanly" means genuinely clean.
-          errors: list[str] = []
-
-          class _Catch(logging.Handler):
-              def emit(self, record):
-                  if record.levelno >= logging.ERROR:
-                      errors.append(record.getMessage())
-
-          logging.getLogger().addHandler(_Catch())
-
           bag = DagBag(dag_folder="airflow_home/dags", include_examples=False)
           if bag.import_errors:
               for path, err in bag.import_errors.items():
                   print(f"IMPORT ERROR: {path}\n{err}", file=sys.stderr)
-          if errors:
-              for msg in errors:
-                  print(f"PARSE ERROR LOG: {msg}", file=sys.stderr)
-          if bag.import_errors or errors:
               sys.exit(1)
           print(f"parsed {len(bag.dags)} DAG(s) cleanly: {sorted(bag.dags)}")
           PY

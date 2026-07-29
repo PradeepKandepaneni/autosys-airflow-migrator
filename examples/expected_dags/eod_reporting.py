@@ -23,6 +23,6 @@ with DAG(
     wait_eod_settlement_eod_load = ExternalTaskSensor(task_id='wait_eod_settlement_eod_load', external_dag_id='eod_settlement', external_task_id='eod_load', mode="reschedule", poke_interval=60)
     wait_eod_settlement_eod_recon_alert = ExternalTaskSensor(task_id='wait_eod_settlement_eod_recon_alert', external_dag_id='eod_settlement', external_task_id='eod_recon_alert', mode="reschedule", poke_interval=60)
     with TaskGroup(group_id='eod_reporting') as eod_reporting:
-        eod_reg_report = BashOperator(task_id='eod_reg_report', bash_command='/opt/batch/reg_report.sh ')
+        eod_reg_report = BashOperator(task_id='eod_reg_report', bash_command='/opt/batch/reg_report.sh')
     wait_eod_settlement_eod_load >> eod_reporting
     wait_eod_settlement_eod_recon_alert >> eod_reporting
