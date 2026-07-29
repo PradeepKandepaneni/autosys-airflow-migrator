@@ -1,0 +1,13 @@
+{
+  "name": "EOD settlement batch success SLO",
+  "description": "99.0% of settlement runs complete successfully on trading days. Mirrors the reliability the AutoSys box implicitly provided; now made explicit and measurable.",
+  "type": "metric",
+  "sli_specification": {
+    "good_events_query": "sum:jil2dag.dag.failed{dag:eod_settlement}.as_count()",
+    "total_events_query": "sum:jil2dag.dag.failed{dag:eod_settlement}.as_count() + sum:jil2dag.task.succeeded{dag:eod_settlement,task:eod_load}.as_count()"
+  },
+  "thresholds": [
+    { "timeframe": "30d", "target": 99.0, "warning": 99.5 }
+  ],
+  "tags": ["team:batch-platform", "migrated:jil2dag", "source:autosys"]
+}

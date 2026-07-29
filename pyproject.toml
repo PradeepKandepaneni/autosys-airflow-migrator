@@ -1,0 +1,45 @@
+[project]
+name = "autosys-airflow-migrator"
+version = "0.1.0"
+description = "Deterministic, observable AutoSys JIL -> Airflow 3 migration engine"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Pradeep Kandepaneni" }]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+# Airflow + providers are only needed to *run* generated DAGs, not to migrate.
+airflow = [
+  "apache-airflow==3.2.0",
+  "apache-airflow-providers-standard",
+  "apache-airflow-providers-ssh",
+  "datadog>=0.49",
+]
+
+[project.scripts]
+jil2dag = "jil2dag.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["jil2dag"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+# F = pyflakes, E9 = syntax, I = imports, AIR30x/AIR31x = Airflow 2->3 upgrade rules.
+select = ["F", "E9", "I", "AIR301", "AIR311"]
+
+[tool.ruff.lint.isort]
+# datadog_callbacks is our runtime module, mounted next to the generated DAGs.
+known-first-party = ["jil2dag", "datadog_callbacks"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

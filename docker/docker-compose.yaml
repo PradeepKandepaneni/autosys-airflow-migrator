@@ -1,0 +1,38 @@
+# Minimal local stack: Airflow 3.2 (standalone) + a Datadog agent so the
+# custom jil2dag.* metrics have somewhere to land. NOT production topology —
+# this is for seeing your migrated DAGs run and light up a dashboard.
+#
+# Usage:
+#   export DD_API_KEY=...            # your Datadog key
+#   make up                         # then open http://localhost:8080  (admin/admin)
+services:
+  airflow:
+    image: apache/airflow:3.2.0
+    depends_on: [datadog-agent]
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      # Airflow 3 requires the dag processor; standalone starts it for us.
+      DD_AGENT_HOST: datadog-agent
+      DD_DOGSTATSD_PORT: "8125"
+      DD_ENV: local
+      _AIRFLOW_WWW_USER_USERNAME: admin
+      _AIRFLOW_WWW_USER_PASSWORD: admin
+    ports: ["8080:8080"]
+    volumes:
+      - ../out/dags:/opt/airflow/dags
+      - ../observability/airflow/datadog_callbacks.py:/opt/airflow/dags/datadog_callbacks.py
+    command: standalone
+
+  datadog-agent:
+    image: gcr.io/datadoghq/agent:7
+    environment:
+      DD_API_KEY: ${DD_API_KEY:-replace-me}
+      DD_SITE: ${DD_SITE:-datadoghq.com}
+      DD_DOGSTATSD_NON_LOCAL_TRAFFIC: "true"
+      DD_APM_ENABLED: "true"
+    ports:
+      - "8125:8125/udp"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc/:/host/proc/:ro

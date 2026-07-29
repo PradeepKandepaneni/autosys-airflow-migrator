@@ -1,0 +1,38 @@
+[
+  {
+    "name": "[jil2dag] EOD settlement DAG failed",
+    "type": "metric alert",
+    "query": "sum(last_10m):sum:jil2dag.dag.failed{dag:eod_settlement} >= 1",
+    "message": "The migrated EOD_SETTLEMENT box failed. This is the AutoSys alarm_if_fail equivalent.\nRunbook: docs/troubleshooting-runbook.md#dag-failure\n@pagerduty-batch-oncall",
+    "tags": ["team:batch-platform", "migrated:jil2dag", "source:autosys"],
+    "options": {
+      "notify_no_data": true,
+      "no_data_timeframe": 20,
+      "renotify_interval": 30,
+      "thresholds": { "critical": 1 }
+    }
+  },
+  {
+    "name": "[jil2dag] EOD load missed its deadline (was AutoSys SLA 19:15)",
+    "type": "metric alert",
+    "query": "max(last_15m):max:jil2dag.task.duration_seconds{dag:eod_settlement,task:eod_load} > 900",
+    "message": "eod_load ran longer than 15m. AutoSys enforced this via max_run_alarm/SLA; Airflow 3 removed SLAs, so the deadline lives here.\nRunbook: docs/troubleshooting-runbook.md#deadline\n@slack-batch-alerts",
+    "tags": ["team:batch-platform", "migrated:jil2dag", "jil_job:EOD_LOAD"],
+    "options": {
+      "thresholds": { "critical": 900, "warning": 600 },
+      "renotify_interval": 30
+    }
+  },
+  {
+    "name": "[jil2dag] Positions feed sensor stuck (filewatcher parity)",
+    "type": "metric alert",
+    "query": "sum(last_30m):sum:jil2dag.task.succeeded{dag:eod_settlement,task:eod_wait_feed} < 1",
+    "message": "The FileSensor replacing AutoSys filewatcher EOD_WAIT_FEED has not succeeded within the window. Feed likely late.\n@slack-batch-alerts",
+    "tags": ["team:batch-platform", "migrated:jil2dag", "jil_job:EOD_WAIT_FEED"],
+    "options": {
+      "notify_no_data": true,
+      "no_data_timeframe": 45,
+      "thresholds": { "critical": 1 }
+    }
+  }
+]

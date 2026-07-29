@@ -1,0 +1,36 @@
+{
+  "title": "AutoSys→Airflow Migration Overview (jil2dag)",
+  "description": "Business-level view of migrated batches, tagged back to their source JIL jobs. Answers the migration-validation question: does Airflow behave like AutoSys did?",
+  "layout_type": "ordered",
+  "widgets": [
+    {
+      "definition": {
+        "type": "query_value",
+        "title": "Settlement runs succeeded (24h)",
+        "requests": [{ "q": "sum:jil2dag.task.succeeded{dag:eod_settlement,task:eod_load}.as_count()", "aggregator": "sum" }]
+      }
+    },
+    {
+      "definition": {
+        "type": "query_value",
+        "title": "DAG failures (24h)",
+        "requests": [{ "q": "sum:jil2dag.dag.failed{migrated:jil2dag}.as_count()", "aggregator": "sum" }],
+        "custom_links": [{ "label": "Runbook", "link": "docs/troubleshooting-runbook.md" }]
+      }
+    },
+    {
+      "definition": {
+        "type": "timeseries",
+        "title": "Task duration by migrated job",
+        "requests": [{ "q": "avg:jil2dag.task.duration_seconds{migrated:jil2dag} by {task}", "display_type": "line" }]
+      }
+    },
+    {
+      "definition": {
+        "type": "toplist",
+        "title": "Failing tasks (by source JIL job)",
+        "requests": [{ "q": "top(sum:jil2dag.task.failed{source:autosys} by {jil_job}.as_count(), 10, 'sum', 'desc')" }]
+      }
+    }
+  ]
+}

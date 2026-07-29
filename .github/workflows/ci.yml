@@ -1,0 +1,94 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install engine + dev tools
+        run: pip install -e ".[dev]"
+      - name: Ruff (engine + Airflow 3 upgrade rules)
+        run: ruff check .
+      - name: Unit tests
+        run: pytest -q
+      - name: Migrate the example and check it matches the committed golden DAGs
+        run: |
+          jil2dag migrate --input examples/jil --output /tmp/gen
+          diff -ru examples/expected_dags /tmp/gen \
+            && echo "generated DAGs match golden set (deterministic ✔)"
+
+  dagbag-parse:
+    # Proves the generated DAGs actually import against real Airflow 3.2,
+    # not just that they're valid Python. This is the check Orbiter never gave you.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Airflow 3.2 + providers
+        run: |
+          pip install -e ".[airflow]" \
+            --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-3.2.0/constraints-3.12.txt"
+      - name: Generate DAGs into an Airflow dags folder
+        run: |
+          mkdir -p airflow_home/dags
+          cp observability/airflow/datadog_callbacks.py airflow_home/dags/
+          jil2dag migrate --input examples/jil --output airflow_home/dags
+      - name: Parse the DagBag (fails on any import error OR error-level log)
+        env:
+          AIRFLOW_HOME: ${{ github.workspace }}/airflow_home
+          AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+          # Airflow 3 no longer puts the dags folder on sys.path itself: in a real
+          # deployment the DAG *bundle* appends its root, and the default local bundle
+          # root IS the dags folder. The low-level DagBag(dag_folder=...) we call here
+          # skips the bundle machinery, so we replicate the bundle's sys.path insertion
+          # explicitly. This is what makes `from datadog_callbacks import ...` resolve.
+          PYTHONPATH: ${{ github.workspace }}/airflow_home/dags
+        run: |
+          airflow db migrate
+          python - <<'PY'
+          import logging
+          import os
+          import sys
+
+          # Belt-and-suspenders alongside the PYTHONPATH env above: guarantee the dags
+          # folder is importable regardless of how the shell exports env vars. This is
+          # what the Airflow 3 DAG bundle does for the scheduler; DagBag(dag_folder=...)
+          # does not, so we do it ourselves.
+          sys.path.insert(0, os.path.abspath("airflow_home/dags"))
+
+          from airflow.models.dagbag import DagBag
+
+          # Template-resolution failures (e.g. a bash_command ending in ".sh" that
+          # Airflow mistakes for a Jinja template file) are logged, not raised, so
+          # they never reach import_errors. Catch ERROR-level logs and fail on them
+          # too, so "parsed cleanly" means genuinely clean.
+          errors: list[str] = []
+
+          class _Catch(logging.Handler):
+              def emit(self, record):
+                  if record.levelno >= logging.ERROR:
+                      errors.append(record.getMessage())
+
+          logging.getLogger().addHandler(_Catch())
+
+          bag = DagBag(dag_folder="airflow_home/dags", include_examples=False)
+          if bag.import_errors:
+              for path, err in bag.import_errors.items():
+                  print(f"IMPORT ERROR: {path}\n{err}", file=sys.stderr)
+          if errors:
+              for msg in errors:
+                  print(f"PARSE ERROR LOG: {msg}", file=sys.stderr)
+          if bag.import_errors or errors:
+              sys.exit(1)
+          print(f"parsed {len(bag.dags)} DAG(s) cleanly: {sorted(bag.dags)}")
+          PY

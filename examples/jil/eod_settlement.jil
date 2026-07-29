@@ -1,0 +1,78 @@
+/* ---------------------------------------------------------------------------
+   End-of-Day Settlement batch — a deliberately realistic, messy example.
+   Exercises: box container, filewatcher, s()/d()/f()/notrunning conditions,
+   an OR condition (lossy), start_times + days_of_week, run_calendar,
+   remote machine execution, and a cross-box dependency.
+   --------------------------------------------------------------------------- */
+
+insert_job: EOD_SETTLEMENT   job_type: b
+start_times: "18:30"
+days_of_week: mo,tu,we,th,fr
+run_calendar: nyse_trading_days
+timezone: America/New_York
+description: "End of day settlement box — kicks off after market close"
+
+insert_job: EOD_WAIT_FEED   job_type: f
+box_name: EOD_SETTLEMENT
+watch_file: /data/feeds/positions_$$DATE.csv
+description: "Wait for the custodian positions feed to land"
+
+insert_job: EOD_EXTRACT   job_type: c
+box_name: EOD_SETTLEMENT
+command: /opt/batch/extract_positions.sh
+machine: prod-etl-01
+condition: s(EOD_WAIT_FEED)
+std_out_file: /logs/eod_extract.out
+std_err_file: /logs/eod_extract.err
+max_run_alarm: 20
+description: "Extract raw positions from the landed feed"
+
+insert_job: EOD_VALIDATE   job_type: c
+box_name: EOD_SETTLEMENT
+command: /opt/batch/validate.sh --strict
+machine: prod-etl-01
+condition: s(EOD_EXTRACT)
+alarm_if_fail: 1
+term_run_time: 30
+description: "Validate row counts and checksums"
+
+insert_job: EOD_TRANSFORM   job_type: c
+box_name: EOD_SETTLEMENT
+command: /opt/batch/transform.sh
+machine: prod-etl-02
+condition: s(EOD_VALIDATE) & notrunning(EOD_REPRICE)
+description: "Normalize and enrich validated positions"
+
+insert_job: EOD_REPRICE   job_type: c
+box_name: EOD_SETTLEMENT
+command: /opt/batch/reprice.sh
+machine: prod-etl-02
+condition: s(EOD_VALIDATE)
+description: "Mark-to-market repricing (competes with transform for the pricer)"
+
+insert_job: EOD_LOAD   job_type: c
+box_name: EOD_SETTLEMENT
+command: /opt/batch/load_warehouse.sh
+condition: d(EOD_TRANSFORM) & d(EOD_REPRICE)
+alarm_if_fail: 1
+description: "Load into the settlement warehouse once both branches are done"
+
+insert_job: EOD_RECON_ALERT   job_type: c
+box_name: EOD_SETTLEMENT
+command: /opt/batch/page_oncall.sh --reason recon-fail
+condition: f(EOD_LOAD)
+description: "Fire only if the load fails — recovery path"
+
+/* Separate reporting box that waits on the settlement box completing */
+
+insert_job: EOD_REPORTING   job_type: b
+start_times: "20:00"
+days_of_week: mo,tu,we,th,fr
+timezone: America/New_York
+description: "Regulatory reporting box, runs after settlement"
+
+insert_job: EOD_REG_REPORT   job_type: c
+box_name: EOD_REPORTING
+command: /opt/batch/reg_report.sh
+condition: s(EOD_LOAD) | s(EOD_RECON_ALERT)
+description: "Produce the regulatory report (OR: proceed on load OR recovery)"
